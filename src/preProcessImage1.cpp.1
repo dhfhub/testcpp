@@ -1,0 +1,3062 @@
+#include "preProcessImage.h"
+#include <algorithm>
+
+PreProcessImage::PreProcessImage()
+{
+    // 自然光影像
+    image_sunlight = cv::imread("/home/dhf/workspace/cpp/res/wei/normal/img_sun.jpg");
+
+    // 偏振光影像
+    image_cross = cv::imread("/home/dhf/workspace/cpp/res/wei/normal/img_cross.jpg");
+    // image_cross = cv::imread("/home/dhf/workspace/cpp/res/lai/img_cross.jpg");
+    // image_cross = cv::imread("/home/dhf/workspace/cpp/res/niuvym/img_cross.jpg");
+    // image_cross = cv::imread("/home/dhf/workspace/cpp/res/niu/A2.png");
+    // image_cross = cv::imread("/home/dhf/workspace/cpp/res/niu/B2.png");
+    // image_cross = cv::imread("/home/dhf/workspace/cpp/res/guo/guo.BMP");
+    // image_cross = cv::imread("/home/dhf/workspace/cpp/res/wei/normal/cross.BMP");
+    // image_cross = cv::imread("/home/dhf/workspace/cpp/res/huang/cross.BMP");
+
+    // 紫质影像
+    // image_uv = cv::imread("/home/dhf/workspace/cpp/res/wei/normal/img_uv.jpg");
+    // image_uv = cv::imread("/home/dhf/workspace/cpp/res/gao/uv.jpg");
+    // image_uv = cv::imread("/home/dhf/workspace/cpp/res/wei/normal/UV.BMP");
+    // image_uv = cv::imread("/home/dhf/workspace/cpp/res/niu/A5.png");
+    // image_uv = cv::imread("/home/dhf/workspace/cpp/res/huang/uv.BMP");
+    // image_uv = cv::imread("/home/dhf/workspace/cpp/res/li/uv.png");
+    image_uv = cv::imread("/home/dhf/workspace/cpp/res/niuvym/img_uv.jpg");
+}
+
+PreProcessImage::~PreProcessImage()
+{
+
+}
+
+void changeBrightnessContrast(const cv::Mat &image, cv::Mat &dst, int _brightness, int _contrast)
+{
+    int histSize = 64;
+    int brightness = _brightness - 100;
+    int contrast = _contrast - 100;
+
+    /*
+     * The algorithm is by Werner D. Streidt
+     * (http://visca.com/ffactory/archives/5-99/msg00021.html)
+     */
+    double a, b;
+    
+    double delta=0;
+    
+    if (contrast > 0)
+    {
+        delta = 127. * contrast / 100;
+        a = 255. / (255. - delta * 2);
+        b = a * (brightness - delta);
+    }
+    else
+    {
+        delta = -128. * contrast / 100;
+        a = (256. - delta * 2) / 255.;
+        b = a * brightness + delta;
+    }
+    /*method 2*/ 
+    //a = _contrast / 100.0f;
+    //b = (1 - a) * 127 + _brightness - 100;
+    //printf("ab value :%.4lf, %.4lf, %.4lf\n",delta, a, b);
+    image.convertTo(dst, CV_8U, a, b);
+
+    // 计算直方图
+    // Mat hist;
+    // calcHist(&dst, 1, 0, Mat(), hist, 1, &histSize, 0);
+    // Mat histImage = Mat::ones(200, 320, CV_8U) * 255;
+
+    // normalize(hist, hist, 0, histImage.rows, NORM_MINMAX, CV_32F);
+
+    // histImage = Scalar::all(255);
+    // int binW = cvRound((double)histImage.cols / histSize);
+
+    // for (int i = 0; i < histSize; i++)
+    //     rectangle(histImage, Point(i * binW, histImage.rows),
+    //         Point((i + 1) * binW, histImage.rows - cvRound(hist.at<float>(i))),
+    //         Scalar::all(0), -1, 8, 0);
+    // imshow("histogram", histImage);
+}
+
+int PreProcessImage::initPreProcessImage(const char* modelPath)
+{
+
+}
+
+int PreProcessImage::getRedPredict()
+{
+    double t = (double)cv::getTickCount();
+
+    cv::Mat Mat1 = image_cross;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_a = Mat1_lab_vector.at(1);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+    
+    // 取Mat1_lab_b图像中的最大最小像素值
+    // float min = 0.45784314;
+    // float max = 0.6549;
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = 0.45784314;
+    max = 0.6549;
+
+    
+    int nr = Mat1_lab_a.rows;
+    int nc = Mat1_lab_a.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_a.size(), Mat1_lab_a.type());
+    if(Mat1_lab_a.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_a.rows*Mat1_lab_a.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_a.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+
+
+    // hsv增加亮度
+    nr = Mat1_hsv_v.rows;
+    nc = Mat1_hsv_v.cols;
+    cv::Mat outImage_hsv_v;
+    outImage_hsv_v.create(Mat1_hsv_v.size(), Mat1_hsv_v.type());
+    if(Mat1_hsv_v.isContinuous() && outImage_hsv_v.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_hsv_v.rows*Mat1_hsv_v.channels();
+        std::cout << "test" << std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData_v = Mat1_hsv_v.ptr<float>(i);
+        float* outData_v = outImage_hsv_v.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // if (*inData_v>0.098039216)
+            // {
+            //     *outData_v = *inData_v + 0.2;
+            // }
+
+            *outData_v = *inData_v;
+            
+            if (*outData_v > 1)
+            {
+                *outData_v = 1;
+            }
+            
+            outData_v ++;
+            inData_v ++;
+        }
+    }
+    
+    // 创建空白单通道图片
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_a_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    cv::Mat kernel(outImage.size(), CV_8UC1, cv::Scalar(0));
+    outImage.convertTo(Mat1_a_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    // outImage_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(kernel);
+    channels.push_back(Mat1_a_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+
+    // 曲线调色
+    curves.RGBChannel.clearPoints();
+    // curves.RedChannel.clearPoints();
+    // curves.GreenChannel.clearPoints();
+    // curves.BlueChannel.clearPoints();
+    // curves.RGBChannel.addPoint( Point(0, 0) );
+	curves.RGBChannel.addPoint( Point(38,  36) );
+	curves.RGBChannel.addPoint( Point(129, 170) );
+    // curves.RGBChannel.addPoint( Point(255, 255) );
+
+    cv::Mat curves_dst;
+	curves.adjust(Mat1A_rgb, curves_dst);
+    
+
+
+    image_RedPredict = Mat1A_rgb;
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "data指针遍历:" << t << "ms" << std::endl;
+
+    // 保存图像
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);
+    cv::imwrite("redp.png", image_RedPredict, compression_params);  
+}
+
+int PreProcessImage::getRedPredict1()
+{
+    double t = (double)cv::getTickCount();
+
+    cv::Mat Mat1 = image_cross;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_a = Mat1_lab_vector.at(1);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+    
+    // 取Mat1_lab_b图像中的最大最小像素值
+    // float min = 0.45784314;
+    // float max = 0.6549;
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = 0.47784314;
+    max = 0.63749;
+
+    
+    int nr = Mat1_lab_a.rows;
+    int nc = Mat1_lab_a.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_a.size(), Mat1_lab_a.type());
+    if(Mat1_lab_a.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_a.rows*Mat1_lab_a.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_a.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+
+
+    // hsv增加亮度
+    nr = Mat1_hsv_v.rows;
+    nc = Mat1_hsv_v.cols;
+    cv::Mat outImage_hsv_v;
+    outImage_hsv_v.create(Mat1_hsv_v.size(), Mat1_hsv_v.type());
+    if(Mat1_hsv_v.isContinuous() && outImage_hsv_v.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_hsv_v.rows*Mat1_hsv_v.channels();
+        std::cout << "test" << std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData_v = Mat1_hsv_v.ptr<float>(i);
+        float* outData_v = outImage_hsv_v.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_v>0.098039216)
+            {
+                *outData_v = *inData_v + 1;
+            }
+
+            // *outData_v = *inData_v;
+            
+            if (*outData_v > 1)
+            {
+                *outData_v = 1;
+            }
+            
+            outData_v ++;
+            inData_v ++;
+        }
+    }
+    
+    // 创建空白单通道图片
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_a_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    cv::Mat kernel(outImage.size(), CV_8UC1, cv::Scalar(0));
+    outImage.convertTo(Mat1_a_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    // outImage_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(kernel);
+    channels.push_back(Mat1_a_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+
+    // 曲线调色
+    cv::Mat curves_dst = Mat1A_rgb;
+    curves.RGBChannel.clearPoints();
+    // curves.RedChannel.clearPoints();
+    // curves.GreenChannel.clearPoints();
+    // curves.BlueChannel.clearPoints();
+    // curves.RGBChannel.addPoint( Point(0, 0) );
+	// curves.RGBChannel.addPoint( Point(38,  36) );
+	// curves.RGBChannel.addPoint( Point(129, 170) );
+    // curves.RGBChannel.addPoint( Point(255, 255) );
+
+    curves.RGBChannel.addPoint( Point(0, 0) );
+    // curves.RGBChannel.addPoint( Point(38,  38) );
+    curves.RGBChannel.addPoint( Point(129, 170) );
+	curves.RGBChannel.addPoint( Point(175,  222) );
+    curves.RGBChannel.addPoint( Point(255, 255) );
+
+    
+	curves.adjust(Mat1A_rgb, curves_dst);
+
+    cv::Mat test;
+    changeBrightnessContrast(curves_dst, test, 120, 120);
+
+
+    image_RedPredict = test;
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "data指针遍历:" << t << "ms" << std::endl;
+
+    
+
+    // 保存图像
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);
+    cv::imwrite("redp.png", image_RedPredict, compression_params);  
+}
+
+int PreProcessImage::getSpotPredict()
+{
+    
+}
+
+int PreProcessImage::getRedMap1()
+{
+    double t = (double)cv::getTickCount();
+
+    cv::Mat Mat1 = image_cross;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_a = Mat1_lab_vector.at(1);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+    
+    // 取Mat1_lab_b图像中的最大最小像素值
+    // float min = 0.45784314;
+    // float max = 0.6549;
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = 0.45784314;
+    max = 0.6549;
+
+    
+    int nr = Mat1_lab_a.rows;
+    int nc = Mat1_lab_a.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_a.size(), Mat1_lab_a.type());
+    if(Mat1_lab_a.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_a.rows*Mat1_lab_a.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_a.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+
+
+    // hsv增加亮度（目前没运用）
+    nr = Mat1_hsv_v.rows;
+    nc = Mat1_hsv_v.cols;
+    cv::Mat outImage_hsv_v;
+    outImage_hsv_v.create(Mat1_hsv_v.size(), Mat1_hsv_v.type());
+    if(Mat1_hsv_v.isContinuous() && outImage_hsv_v.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_hsv_v.rows*Mat1_hsv_v.channels();
+        std::cout << "test" << std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData_v = Mat1_hsv_v.ptr<float>(i);
+        float* outData_v = outImage_hsv_v.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // if (*inData_v>0.098039216)
+            // {
+            //     *outData_v = *inData_v + 0.2;
+            // }
+
+            *outData_v = *inData_v;
+            
+            if (*outData_v > 1)
+            {
+                *outData_v = 1;
+            }
+            
+            outData_v ++;
+            inData_v ++;
+        }
+    }
+    
+    // 创建空白单通道图片
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_a_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    cv::Mat kernel(outImage.size(), CV_8UC1, cv::Scalar(0));
+    outImage.convertTo(Mat1_a_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    // outImage_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(kernel);
+    channels.push_back(Mat1_a_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+
+    // 曲线调色
+    curves.RGBChannel.clearPoints();
+    // curves.RedChannel.clearPoints();
+    // curves.GreenChannel.clearPoints();
+    // curves.BlueChannel.clearPoints();
+    // curves.RGBChannel.addPoint( Point(0, 0) );
+	curves.RGBChannel.addPoint( Point(38,  36) );
+	curves.RGBChannel.addPoint( Point(129, 170) );
+    // curves.RGBChannel.addPoint( Point(255, 255) );
+
+    cv::Mat curves_dst;
+	curves.adjust(Mat1A_rgb, curves_dst);
+    
+
+    // 存图
+    std::vector<int> compression_params1;
+	compression_params1.push_back(16);
+	compression_params1.push_back(0);
+    cv::imwrite("curves_dst.png", curves_dst);  
+    
+
+    // 获取思图血丝图，解除上面后可删除
+    // cv::Mat curves_dst = cv::imread("curves_dst.png");
+    // int nc,nr;
+
+    // 提取rgb和lab通道，得到mask并增强
+    cv::Mat Mat2 = curves_dst;
+    cv::Mat Mat2_lab;
+    cv::cvtColor(Mat2, Mat2_lab, cv::COLOR_BGR2Lab);
+    std::vector<cv::Mat> Mat2_rgb_vector;
+    std::vector<cv::Mat> Mat2_lab_vector;
+    cv::split(Mat2, Mat2_rgb_vector);
+    cv::split(Mat2_lab, Mat2_lab_vector);
+
+    cv::Mat Mat2_zero;
+    Mat2_zero.create(Mat2.size(), CV_8UC1);
+
+    cv::Mat Mat2_lab_a = Mat2_lab_vector.at(1);
+    cv::Mat Mat2_rgb_g = Mat2_rgb_vector.at(1);
+    cv::Mat Mat2_rgb_b = Mat2_rgb_vector.at(0);
+
+    nr = Mat2_zero.rows;
+    nc = Mat2_zero.cols;
+    if(Mat2.isContinuous() && Mat2_zero.isContinuous())
+    {
+        nr = 1;
+        nc = nc * Mat2_zero.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_a = Mat2_lab_a.ptr<uchar>(i);
+        const uchar* inData_b = Mat2_rgb_b.ptr<uchar>(i);
+        const uchar* inData_g = Mat2_rgb_g.ptr<uchar>(i);
+        uchar* outData = Mat2_zero.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // float temp = *inData_a - *inData_g/16 - *inData_b/30 -38;
+            // int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            float temp = *inData_a - *inData_g/10 - *inData_b/15 -30;
+            int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            if (out_temp < 0)
+            {
+                *outData = 0;
+            }
+            else if (out_temp > 255)
+            {
+                *outData = 255;
+            }
+            else
+            {
+                *outData = (uchar)out_temp;
+            }
+            outData ++;
+            inData_a ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+
+    // clahe去雾增强
+    // cv::Mat mask2 = Mat2_zero;
+    // clahe实际步骤(比较倾向于思图效果)
+    cv::Ptr<CLAHE> clahe = createCLAHE();
+    clahe->setClipLimit(2);
+    cv::Mat mask2;
+    clahe->apply(Mat2_zero, mask2);
+
+    // rgb颜色合成
+    cv::Mat mask2_h, mask2_s, mask2_v;
+    mask2_h.create(mask2.size(), CV_8UC1);
+    mask2_s.create(mask2.size(), CV_8UC1);
+    mask2_v.create(mask2.size(), CV_8UC1);
+
+    nr = mask2.rows;
+    nc = mask2.cols;
+    if(mask2.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2 = mask2.ptr<uchar>(i);
+        uchar* outData_h = mask2_h.ptr<uchar>(i);
+        uchar* outData_s = mask2_s.ptr<uchar>(i);
+        uchar* outData_v = mask2_v.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_mask2 < 25)
+            {
+                *outData_h = 176;
+                *outData_s = 30;
+                *outData_v = 241;
+            }
+            else
+            {
+                *outData_h = 176;
+                *outData_s = 30+180*(*inData_mask2-25)/(255-25);
+                *outData_v = 241-200*(*inData_mask2-25)/(255-25);
+            }
+            
+            outData_h ++;
+            outData_s ++;
+            outData_v ++;
+            inData_mask2 ++;
+        }
+    }
+
+    std::vector<cv::Mat> mask_hsv_vector;
+    cv::Mat mask2_hsv, mask2_rgb;
+    mask_hsv_vector.push_back(mask2_h);
+    mask_hsv_vector.push_back(mask2_s);
+    mask_hsv_vector.push_back(mask2_v);
+    cv::merge(mask_hsv_vector, mask2_hsv);
+    cv::cvtColor(mask2_hsv, mask2_rgb, cv::COLOR_HSV2BGR);
+
+    // rgb通道增强
+    std::vector<cv::Mat> mask2_rgb_vector;
+    cv::split(mask2_rgb, mask2_rgb_vector);
+
+    cv::Mat mask2_r, mask2_g, mask2_b;
+    mask2_r.create(mask2.size(), CV_8UC1);
+    mask2_g.create(mask2.size(), CV_8UC1);
+    mask2_b.create(mask2.size(), CV_8UC1);
+
+    nr = mask2_rgb.rows;
+    nc = mask2_rgb.cols;
+    if(mask2_rgb.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2_rgb.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2_b = mask2_rgb_vector.at(0).ptr<uchar>(i);
+        const uchar* inData_mask2_g = mask2_rgb_vector.at(1).ptr<uchar>(i);
+        const uchar* inData_mask2_r = mask2_rgb_vector.at(2).ptr<uchar>(i);
+        uchar* outData_mask_r = mask2_r.ptr<uchar>(i);
+        uchar* outData_mask_g = mask2_g.ptr<uchar>(i);
+        uchar* outData_mask_b = mask2_b.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            float b_temp = -0.00003566*pow((*inData_mask2_b),3)+0.01467*pow((*inData_mask2_b),2)-0.4392*(*inData_mask2_b)-6.082;
+            float g_temp = -0.00003566*pow((*inData_mask2_g),3)+0.01467*pow((*inData_mask2_g),2)-0.4392*(*inData_mask2_g)-6.082;
+            float r_temp = -0.00003566*pow((*inData_mask2_r),3)+0.01467*pow((*inData_mask2_r),2)-0.4392*(*inData_mask2_r)-6.082;
+            if (b_temp < 0)
+            {
+                *outData_mask_b = 0;
+            }
+            else if (b_temp > 255)
+            {
+                *outData_mask_b = 255;
+            }
+            else
+            {
+                *outData_mask_b = (uchar)b_temp;
+            }
+
+            if (g_temp < 0)
+            {
+                *outData_mask_g = 0;
+            }
+            else if (g_temp > 255)
+            {
+                *outData_mask_g = 255;
+            }
+            else
+            {
+                *outData_mask_g = (uchar)g_temp;
+            }
+
+            if (r_temp < 0)
+            {
+                *outData_mask_r = 0;
+            }
+            else if (r_temp > 255)
+            {
+                *outData_mask_r = 255;
+            }
+            else
+            {
+                *outData_mask_r = (uchar)r_temp;
+            }
+
+
+            outData_mask_b ++;
+            outData_mask_g ++;
+            outData_mask_r ++;
+            inData_mask2_b ++;
+            inData_mask2_g ++;
+            inData_mask2_r ++;
+            
+        }
+    }
+   
+    // 再次clahe增强(慎重考虑)
+    // cv::Mat mask_2_b,mask_2_g,mask_2_r;
+    // cv::Ptr<CLAHE> clahe1 = createCLAHE();
+    // clahe1->setClipLimit(2);
+    // clahe1->apply(mask2_b, mask_2_b);
+    // clahe1->apply(mask2_g, mask_2_g);
+    // clahe1->apply(mask2_r, mask_2_r);
+    // cv::Mat mask3;
+    // std::vector<cv::Mat> mask3_rbg_vector;
+    // mask3_rbg_vector.push_back(mask_2_b);
+    // mask3_rbg_vector.push_back(mask_2_g);
+    // mask3_rbg_vector.push_back(mask_2_r);
+    // cv::merge(mask3_rbg_vector, mask3);
+
+    // 不再次clahe增强
+    cv::Mat mask3;
+    std::vector<cv::Mat> mask3_rbg_vector;
+    mask3_rbg_vector.push_back(mask2_b);
+    mask3_rbg_vector.push_back(mask2_g);
+    mask3_rbg_vector.push_back(mask2_r);
+    cv::merge(mask3_rbg_vector, mask3);
+
+    image_RedMap = mask3;
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "耗时:" << t << "ms" << std::endl;
+
+    // 保存图像
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);
+    cv::imwrite("red.png", image_RedMap, compression_params);  
+}
+
+int PreProcessImage::getRedMap2()
+{
+    double t = (double)cv::getTickCount();
+
+    
+    cv::Mat Mat1 = image_cross;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_a = Mat1_lab_vector.at(1);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+    
+    // 取Mat1_lab_b图像中的最大最小像素值
+    // float min = 0.45784314;
+    // float max = 0.6549;
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = 0.45784314;
+    max = 0.6549;
+
+    
+    int nr = Mat1_lab_a.rows;
+    int nc = Mat1_lab_a.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_a.size(), Mat1_lab_a.type());
+    if(Mat1_lab_a.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_a.rows*Mat1_lab_a.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_a.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+
+
+    // hsv增加亮度（目前没运用）
+    nr = Mat1_hsv_v.rows;
+    nc = Mat1_hsv_v.cols;
+    cv::Mat outImage_hsv_v;
+    outImage_hsv_v.create(Mat1_hsv_v.size(), Mat1_hsv_v.type());
+    if(Mat1_hsv_v.isContinuous() && outImage_hsv_v.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_hsv_v.rows*Mat1_hsv_v.channels();
+        std::cout << "test" << std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData_v = Mat1_hsv_v.ptr<float>(i);
+        float* outData_v = outImage_hsv_v.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // if (*inData_v>0.098039216)
+            // {
+            //     *outData_v = *inData_v + 0.2;
+            // }
+
+            *outData_v = *inData_v;
+            
+            if (*outData_v > 1)
+            {
+                *outData_v = 1;
+            }
+            
+            outData_v ++;
+            inData_v ++;
+        }
+    }
+    
+    // 创建空白单通道图片
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_a_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    cv::Mat kernel(outImage.size(), CV_8UC1, cv::Scalar(0));
+    outImage.convertTo(Mat1_a_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    // outImage_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(kernel);
+    channels.push_back(Mat1_a_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+
+    // 曲线调色
+    cv::Mat curves_dst = Mat1A_rgb;
+    curves.RGBChannel.clearPoints();
+    // curves.RedChannel.clearPoints();
+    // curves.GreenChannel.clearPoints();
+    // curves.BlueChannel.clearPoints();
+    // curves.RGBChannel.addPoint( Point(0, 0) );
+	// curves.RGBChannel.addPoint( Point(38,  36) );
+	// curves.RGBChannel.addPoint( Point(129, 170) );
+    // curves.RGBChannel.addPoint( Point(255, 255) );
+    curves.RGBChannel.addPoint( Point(0, 0) );
+    curves.RGBChannel.addPoint( Point(153, 229) );
+    curves.RGBChannel.addPoint( Point(255, 255) );
+
+    
+	curves.adjust(Mat1A_rgb, curves_dst);
+    
+
+    // 存图
+    std::vector<int> compression_params1;
+	compression_params1.push_back(16);
+	compression_params1.push_back(0);
+    cv::imwrite("curves_dst.png", curves_dst);  
+    
+    
+    // 获取思图血丝图，解除上面后可删除
+    // cv::Mat curves_dst = cv::imread("curves_dst.png");
+    // cv::Mat curves_dst = cv::imread("/home/dhf/workspace/cpp/res/niuvym/RedPredict_r9.jpg");
+    // int nc,nr;
+
+    // 提取rgb和lab通道，得到mask并增强
+    cv::Mat Mat2 = curves_dst;
+    cv::Mat Mat2_lab;
+    cv::cvtColor(Mat2, Mat2_lab, cv::COLOR_BGR2Lab);
+    std::vector<cv::Mat> Mat2_rgb_vector;
+    std::vector<cv::Mat> Mat2_lab_vector;
+    cv::split(Mat2, Mat2_rgb_vector);
+    cv::split(Mat2_lab, Mat2_lab_vector);
+
+    cv::Mat Mat2_zero;
+    Mat2_zero.create(Mat2.size(), CV_8UC1);
+
+    cv::Mat Mat2_lab_a = Mat2_lab_vector.at(1);
+    cv::Mat Mat2_rgb_g = Mat2_rgb_vector.at(1);
+    cv::Mat Mat2_rgb_b = Mat2_rgb_vector.at(0);
+
+    nr = Mat2_zero.rows;
+    nc = Mat2_zero.cols;
+    if(Mat2.isContinuous() && Mat2_zero.isContinuous())
+    {
+        nr = 1;
+        nc = nc * Mat2_zero.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_a = Mat2_lab_a.ptr<uchar>(i);
+        const uchar* inData_b = Mat2_rgb_b.ptr<uchar>(i);
+        const uchar* inData_g = Mat2_rgb_g.ptr<uchar>(i);
+        uchar* outData = Mat2_zero.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // float temp = *inData_a - *inData_g/16 - *inData_b/30 -38;
+            // int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            float temp = *inData_a - *inData_g/10 - *inData_b/15 -30;
+            int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            if (out_temp < 0)
+            {
+                *outData = 0;
+            }
+            else if (out_temp > 255)
+            {
+                *outData = 255;
+            }
+            else
+            {
+                *outData = (uchar)out_temp;
+            }
+            outData ++;
+            inData_a ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+
+    // clahe去雾增强
+    // cv::Mat mask2 = Mat2_zero;
+    // clahe实际步骤(比较倾向于思图效果)
+    cv::Ptr<CLAHE> clahe = createCLAHE();
+    clahe->setClipLimit(2);
+    cv::Mat mask2;
+    clahe->apply(Mat2_zero, mask2);
+
+    // rgb颜色合成
+    cv::Mat mask2_h, mask2_s, mask2_v;
+    mask2_h.create(mask2.size(), CV_8UC1);
+    mask2_s.create(mask2.size(), CV_8UC1);
+    mask2_v.create(mask2.size(), CV_8UC1);
+
+    nr = mask2.rows;
+    nc = mask2.cols;
+    if(mask2.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2 = mask2.ptr<uchar>(i);
+        uchar* outData_h = mask2_h.ptr<uchar>(i);
+        uchar* outData_s = mask2_s.ptr<uchar>(i);
+        uchar* outData_v = mask2_v.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_mask2 < 25)
+            {
+                *outData_h = 176;
+                *outData_s = 30;
+                *outData_v = 241;
+            }
+            else
+            {
+                *outData_h = 176;
+                *outData_s = 30+180*(*inData_mask2-25)/(255-25);
+                *outData_v = 241-200*(*inData_mask2-25)/(255-25);
+            }
+            
+            outData_h ++;
+            outData_s ++;
+            outData_v ++;
+            inData_mask2 ++;
+        }
+    }
+
+    std::vector<cv::Mat> mask_hsv_vector;
+    cv::Mat mask2_hsv, mask2_rgb;
+    mask_hsv_vector.push_back(mask2_h);
+    mask_hsv_vector.push_back(mask2_s);
+    mask_hsv_vector.push_back(mask2_v);
+    cv::merge(mask_hsv_vector, mask2_hsv);
+    cv::cvtColor(mask2_hsv, mask2_rgb, cv::COLOR_HSV2BGR);
+
+    // rgb通道增强
+    std::vector<cv::Mat> mask2_rgb_vector;
+    cv::split(mask2_rgb, mask2_rgb_vector);
+
+    cv::Mat mask2_r, mask2_g, mask2_b;
+    mask2_r.create(mask2.size(), CV_8UC1);
+    mask2_g.create(mask2.size(), CV_8UC1);
+    mask2_b.create(mask2.size(), CV_8UC1);
+
+    nr = mask2_rgb.rows;
+    nc = mask2_rgb.cols;
+    if(mask2_rgb.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2_rgb.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2_b = mask2_rgb_vector.at(0).ptr<uchar>(i);
+        const uchar* inData_mask2_g = mask2_rgb_vector.at(1).ptr<uchar>(i);
+        const uchar* inData_mask2_r = mask2_rgb_vector.at(2).ptr<uchar>(i);
+        uchar* outData_mask_r = mask2_r.ptr<uchar>(i);
+        uchar* outData_mask_g = mask2_g.ptr<uchar>(i);
+        uchar* outData_mask_b = mask2_b.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            float b_temp = -0.00003566*pow((*inData_mask2_b),3)+0.01467*pow((*inData_mask2_b),2)-0.4392*(*inData_mask2_b)-6.082;
+            float g_temp = -0.00003566*pow((*inData_mask2_g),3)+0.01467*pow((*inData_mask2_g),2)-0.4392*(*inData_mask2_g)-6.082;
+            float r_temp = -0.00003566*pow((*inData_mask2_r),3)+0.01467*pow((*inData_mask2_r),2)-0.4392*(*inData_mask2_r)-6.082;
+            if (b_temp < 0)
+            {
+                *outData_mask_b = 0;
+            }
+            else if (b_temp > 255)
+            {
+                *outData_mask_b = 255;
+            }
+            else
+            {
+                *outData_mask_b = (uchar)b_temp;
+            }
+
+            if (g_temp < 0)
+            {
+                *outData_mask_g = 0;
+            }
+            else if (g_temp > 255)
+            {
+                *outData_mask_g = 255;
+            }
+            else
+            {
+                *outData_mask_g = (uchar)g_temp;
+            }
+
+            if (r_temp < 0)
+            {
+                *outData_mask_r = 0;
+            }
+            else if (r_temp > 255)
+            {
+                *outData_mask_r = 255;
+            }
+            else
+            {
+                *outData_mask_r = (uchar)r_temp;
+            }
+
+
+            outData_mask_b ++;
+            outData_mask_g ++;
+            outData_mask_r ++;
+            inData_mask2_b ++;
+            inData_mask2_g ++;
+            inData_mask2_r ++;
+            
+        }
+    }
+   
+    // 再次clahe增强(慎重考虑)
+    // cv::Mat mask_2_b,mask_2_g,mask_2_r;
+    // cv::Ptr<CLAHE> clahe1 = createCLAHE();
+    // clahe1->setClipLimit(2);
+    // clahe1->apply(mask2_b, mask_2_b);
+    // clahe1->apply(mask2_g, mask_2_g);
+    // clahe1->apply(mask2_r, mask_2_r);
+    // cv::Mat mask3;
+    // std::vector<cv::Mat> mask3_rbg_vector;
+    // mask3_rbg_vector.push_back(mask_2_b);
+    // mask3_rbg_vector.push_back(mask_2_g);
+    // mask3_rbg_vector.push_back(mask_2_r);
+    // cv::merge(mask3_rbg_vector, mask3);
+
+    // 不再次clahe增强
+    cv::Mat mask3;
+    std::vector<cv::Mat> mask3_rbg_vector;
+    mask3_rbg_vector.push_back(mask2_b);
+    mask3_rbg_vector.push_back(mask2_g);
+    mask3_rbg_vector.push_back(mask2_r);
+    cv::merge(mask3_rbg_vector, mask3);
+
+    image_RedMap = mask3;
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "耗时:" << t << "ms" << std::endl;
+
+    // 保存图像
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);
+    cv::imwrite("red.png", image_RedMap, compression_params);  
+}
+
+int PreProcessImage::getRedMap3()
+{
+    double t = (double)cv::getTickCount();
+
+    
+    cv::Mat Mat1 = image_cross;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_a = Mat1_lab_vector.at(1);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+    
+    // 取Mat1_lab_b图像中的最大最小像素值
+    // float min = 0.45784314;
+    // float max = 0.6549;
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = 0.47784314;
+    max = 0.63749;
+
+    
+    int nr = Mat1_lab_a.rows;
+    int nc = Mat1_lab_a.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_a.size(), Mat1_lab_a.type());
+    if(Mat1_lab_a.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_a.rows*Mat1_lab_a.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_a.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+
+
+    // hsv增加亮度
+    nr = Mat1_hsv_v.rows;
+    nc = Mat1_hsv_v.cols;
+    cv::Mat outImage_hsv_v;
+    outImage_hsv_v.create(Mat1_hsv_v.size(), Mat1_hsv_v.type());
+    if(Mat1_hsv_v.isContinuous() && outImage_hsv_v.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_hsv_v.rows*Mat1_hsv_v.channels();
+        std::cout << "test" << std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData_v = Mat1_hsv_v.ptr<float>(i);
+        float* outData_v = outImage_hsv_v.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_v>0.098039216)
+            {
+                *outData_v = *inData_v + 1;
+            }
+
+            // *outData_v = *inData_v;
+            
+            if (*outData_v > 1)
+            {
+                *outData_v = 1;
+            }
+            
+            outData_v ++;
+            inData_v ++;
+        }
+    }
+    
+    // 创建空白单通道图片
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_a_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    cv::Mat kernel(outImage.size(), CV_8UC1, cv::Scalar(0));
+    outImage.convertTo(Mat1_a_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    // outImage_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(kernel);
+    channels.push_back(Mat1_a_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+
+    // 曲线调色
+    cv::Mat curves_dst = Mat1A_rgb;
+    curves.RGBChannel.clearPoints();
+    // curves.RedChannel.clearPoints();
+    // curves.GreenChannel.clearPoints();
+    // curves.BlueChannel.clearPoints();
+    // curves.RGBChannel.addPoint( Point(0, 0) );
+	// curves.RGBChannel.addPoint( Point(38,  36) );
+	// curves.RGBChannel.addPoint( Point(129, 170) );
+    // curves.RGBChannel.addPoint( Point(255, 255) );
+
+    curves.RGBChannel.addPoint( Point(0, 0) );
+    // curves.RGBChannel.addPoint( Point(38,  38) );
+    curves.RGBChannel.addPoint( Point(129, 170) );
+	curves.RGBChannel.addPoint( Point(175,  222) );
+    curves.RGBChannel.addPoint( Point(255, 255) );
+
+    
+	curves.adjust(Mat1A_rgb, curves_dst);
+
+    cv::Mat curves_test;
+    changeBrightnessContrast(curves_dst, curves_test, 120, 120);
+    
+
+    // 存图
+    std::vector<int> compression_params1;
+	compression_params1.push_back(16);
+	compression_params1.push_back(0);
+    cv::imwrite("curves_dst.png", curves_test);  
+    
+    
+    // 获取思图血丝图，解除上面后可删除
+    // cv::Mat curves_dst = cv::imread("curves_dst.png");
+    // cv::Mat curves_dst = cv::imread("/home/dhf/workspace/cpp/res/niuvym/RedPredict_r9.jpg");
+    // int nc,nr;
+
+    // 提取rgb和lab通道，得到mask并增强
+    cv::Mat Mat2 = curves_test;
+    cv::Mat Mat2_lab;
+    cv::cvtColor(Mat2, Mat2_lab, cv::COLOR_BGR2Lab);
+    std::vector<cv::Mat> Mat2_rgb_vector;
+    std::vector<cv::Mat> Mat2_lab_vector;
+    cv::split(Mat2, Mat2_rgb_vector);
+    cv::split(Mat2_lab, Mat2_lab_vector);
+
+    cv::Mat Mat2_zero;
+    Mat2_zero.create(Mat2.size(), CV_8UC1);
+
+    cv::Mat Mat2_lab_a = Mat2_lab_vector.at(1);
+    cv::Mat Mat2_rgb_g = Mat2_rgb_vector.at(1);
+    cv::Mat Mat2_rgb_b = Mat2_rgb_vector.at(0);
+
+    nr = Mat2_zero.rows;
+    nc = Mat2_zero.cols;
+    if(Mat2.isContinuous() && Mat2_zero.isContinuous())
+    {
+        nr = 1;
+        nc = nc * Mat2_zero.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_a = Mat2_lab_a.ptr<uchar>(i);
+        const uchar* inData_b = Mat2_rgb_b.ptr<uchar>(i);
+        const uchar* inData_g = Mat2_rgb_g.ptr<uchar>(i);
+        uchar* outData = Mat2_zero.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // float temp = *inData_a - *inData_g/16 - *inData_b/30 -38;
+            // int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            float temp = *inData_a - *inData_g/10 - *inData_b/15 -30;
+            int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            if (out_temp < 0)
+            {
+                *outData = 0;
+            }
+            else if (out_temp > 255)
+            {
+                *outData = 255;
+            }
+            else
+            {
+                *outData = (uchar)out_temp;
+            }
+            outData ++;
+            inData_a ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+
+    // clahe去雾增强
+    // cv::Mat mask2 = Mat2_zero;
+    // clahe实际步骤(比较倾向于思图效果)
+    cv::Ptr<CLAHE> clahe = createCLAHE();
+    clahe->setClipLimit(0.5);
+    cv::Mat mask2;
+    clahe->apply(Mat2_zero, mask2);
+
+    // rgb颜色合成
+    cv::Mat mask2_h, mask2_s, mask2_v;
+    mask2_h.create(mask2.size(), CV_8UC1);
+    mask2_s.create(mask2.size(), CV_8UC1);
+    mask2_v.create(mask2.size(), CV_8UC1);
+
+    nr = mask2.rows;
+    nc = mask2.cols;
+    if(mask2.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2 = mask2.ptr<uchar>(i);
+        uchar* outData_h = mask2_h.ptr<uchar>(i);
+        uchar* outData_s = mask2_s.ptr<uchar>(i);
+        uchar* outData_v = mask2_v.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_mask2 < 25)
+            {
+                *outData_h = 176;
+                *outData_s = 30;
+                *outData_v = 241;
+            }
+            else
+            {
+                *outData_h = 176;
+                *outData_s = 30+180*(*inData_mask2-25)/(255-25);
+                *outData_v = 241-200*(*inData_mask2-25)/(255-25);
+            }
+            
+            outData_h ++;
+            outData_s ++;
+            outData_v ++;
+            inData_mask2 ++;
+        }
+    }
+
+    std::vector<cv::Mat> mask_hsv_vector;
+    cv::Mat mask2_hsv, mask2_rgb;
+    mask_hsv_vector.push_back(mask2_h);
+    mask_hsv_vector.push_back(mask2_s);
+    mask_hsv_vector.push_back(mask2_v);
+    cv::merge(mask_hsv_vector, mask2_hsv);
+    cv::cvtColor(mask2_hsv, mask2_rgb, cv::COLOR_HSV2BGR);
+
+    // rgb通道增强
+    std::vector<cv::Mat> mask2_rgb_vector;
+    cv::split(mask2_rgb, mask2_rgb_vector);
+
+    cv::Mat mask2_r, mask2_g, mask2_b;
+    mask2_r.create(mask2.size(), CV_8UC1);
+    mask2_g.create(mask2.size(), CV_8UC1);
+    mask2_b.create(mask2.size(), CV_8UC1);
+
+    nr = mask2_rgb.rows;
+    nc = mask2_rgb.cols;
+    if(mask2_rgb.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2_rgb.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2_b = mask2_rgb_vector.at(0).ptr<uchar>(i);
+        const uchar* inData_mask2_g = mask2_rgb_vector.at(1).ptr<uchar>(i);
+        const uchar* inData_mask2_r = mask2_rgb_vector.at(2).ptr<uchar>(i);
+        uchar* outData_mask_r = mask2_r.ptr<uchar>(i);
+        uchar* outData_mask_g = mask2_g.ptr<uchar>(i);
+        uchar* outData_mask_b = mask2_b.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            float b_temp = -0.00003566*pow((*inData_mask2_b),3)+0.01467*pow((*inData_mask2_b),2)-0.4392*(*inData_mask2_b)-6.082;
+            float g_temp = -0.00003566*pow((*inData_mask2_g),3)+0.01467*pow((*inData_mask2_g),2)-0.4392*(*inData_mask2_g)-6.082;
+            float r_temp = -0.00003566*pow((*inData_mask2_r),3)+0.01467*pow((*inData_mask2_r),2)-0.4392*(*inData_mask2_r)-6.082;
+            if (b_temp < 0)
+            {
+                *outData_mask_b = 0;
+            }
+            else if (b_temp > 255)
+            {
+                *outData_mask_b = 255;
+            }
+            else
+            {
+                *outData_mask_b = (uchar)b_temp;
+            }
+
+            if (g_temp < 0)
+            {
+                *outData_mask_g = 0;
+            }
+            else if (g_temp > 255)
+            {
+                *outData_mask_g = 255;
+            }
+            else
+            {
+                *outData_mask_g = (uchar)g_temp;
+            }
+
+            if (r_temp < 0)
+            {
+                *outData_mask_r = 0;
+            }
+            else if (r_temp > 255)
+            {
+                *outData_mask_r = 255;
+            }
+            else
+            {
+                *outData_mask_r = (uchar)r_temp;
+            }
+
+
+            outData_mask_b ++;
+            outData_mask_g ++;
+            outData_mask_r ++;
+            inData_mask2_b ++;
+            inData_mask2_g ++;
+            inData_mask2_r ++;
+            
+        }
+    }
+   
+    // 再次clahe增强(慎重考虑)
+    cv::Mat mask_2_b,mask_2_g,mask_2_r;
+    cv::Ptr<CLAHE> clahe1 = createCLAHE();
+    clahe1->setClipLimit(0.5);
+    clahe1->apply(mask2_b, mask_2_b);
+    clahe1->apply(mask2_g, mask_2_g);
+    clahe1->apply(mask2_r, mask_2_r);
+    cv::Mat mask3;
+    std::vector<cv::Mat> mask3_rbg_vector;
+    mask3_rbg_vector.push_back(mask_2_b);
+    mask3_rbg_vector.push_back(mask_2_g);
+    mask3_rbg_vector.push_back(mask_2_r);
+    cv::merge(mask3_rbg_vector, mask3);
+
+    // 不再次clahe增强
+    // cv::Mat mask3;
+    // std::vector<cv::Mat> mask3_rbg_vector;
+    // mask3_rbg_vector.push_back(mask2_b);
+    // mask3_rbg_vector.push_back(mask2_g);
+    // mask3_rbg_vector.push_back(mask2_r);
+    // cv::merge(mask3_rbg_vector, mask3);
+
+    image_RedMap = mask3;
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "耗时:" << t << "ms" << std::endl;
+
+    // 保存图像
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);
+    cv::imwrite("red.png", image_RedMap, compression_params);  
+}
+
+int PreProcessImage::getRedMap()
+{
+    double t = (double)cv::getTickCount();
+
+    
+    cv::Mat Mat1 = image_cross;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    // 转换成0-1闭区间图像，lab和hsv
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_a = Mat1_lab_vector.at(1);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+
+    // 取Mat1_lab_b图像中的最大最小像素值
+    // float min = 0.45784314;
+    // float max = 0.6549;
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    printf("max=%f min=%f\n", max,min);
+    min = 0.50196;
+    max = 0.6549;
+  
+    
+    // 图像增强处理
+    int nr = Mat1_lab_a.rows;
+    int nc = Mat1_lab_a.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_a.size(), Mat1_lab_a.type());
+    if(Mat1_lab_a.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_a.rows*Mat1_lab_a.channels();
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_a.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+    
+
+    // 保存图像
+    // cv::Mat mat_save;
+    // std::vector<int> compression_params;
+	// compression_params.push_back(16);
+	// compression_params.push_back(0);
+    // outImage.convertTo(mat_save,CV_8U, 255); 
+    // cv::imwrite("1.png", mat_save, compression_params);  
+
+
+    // 融合三通道图片
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_a_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    outImage.convertTo(Mat1_a_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(Mat1_zero);
+    channels.push_back(Mat1_a_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+    
+
+    // 获取思图血丝图，解除上面后可删除
+    // cv::Mat Mat1A_rgb = cv::imread("A3.png");
+    // int nc,nr;
+
+    // 提取rgb和lab通道，得到mask并增强
+    cv::Mat Mat2 = Mat1A_rgb;
+    cv::Mat Mat2_lab;
+    cv::cvtColor(Mat2, Mat2_lab, cv::COLOR_BGR2Lab);
+    std::vector<cv::Mat> Mat2_rgb_vector;
+    std::vector<cv::Mat> Mat2_lab_vector;
+    cv::split(Mat2, Mat2_rgb_vector);
+    cv::split(Mat2_lab, Mat2_lab_vector);
+
+    cv::Mat Mat2_zero;
+    Mat2_zero.create(Mat2.size(), CV_8UC1);
+
+    cv::Mat Mat2_lab_a = Mat2_lab_vector.at(1);
+    cv::Mat Mat2_rgb_g = Mat2_rgb_vector.at(1);
+    cv::Mat Mat2_rgb_b = Mat2_rgb_vector.at(0);
+
+    nr = Mat2_zero.rows;
+    nc = Mat2_zero.cols;
+    if(Mat2.isContinuous() && Mat2_zero.isContinuous())
+    {
+        nr = 1;
+        nc = nc * Mat2_zero.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_a = Mat2_lab_a.ptr<uchar>(i);
+        const uchar* inData_b = Mat2_rgb_b.ptr<uchar>(i);
+        const uchar* inData_g = Mat2_rgb_g.ptr<uchar>(i);
+        uchar* outData = Mat2_zero.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // float temp = *inData_a - *inData_g/16 - *inData_b/30 -38;
+            // int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            float temp = *inData_a - *inData_g/10 - *inData_b/15 -30;
+            int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            if (out_temp < 0)
+            {
+                *outData = 0;
+            }
+            else if (out_temp > 255)
+            {
+                *outData = 255;
+            }
+            else
+            {
+                *outData = (uchar)out_temp;
+            }
+            outData ++;
+            inData_a ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+
+    // clahe去雾增强
+    // cv::Mat mask2 = Mat2_zero;
+    // clahe实际步骤(比较倾向于思图效果)
+    cv::Ptr<CLAHE> clahe = createCLAHE();
+    clahe->setClipLimit(2);
+    cv::Mat mask2;
+    clahe->apply(Mat2_zero, mask2);
+
+    // rgb颜色合成
+    cv::Mat mask2_h, mask2_s, mask2_v;
+    mask2_h.create(mask2.size(), CV_8UC1);
+    mask2_s.create(mask2.size(), CV_8UC1);
+    mask2_v.create(mask2.size(), CV_8UC1);
+
+    nr = mask2.rows;
+    nc = mask2.cols;
+    if(mask2.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2 = mask2.ptr<uchar>(i);
+        uchar* outData_h = mask2_h.ptr<uchar>(i);
+        uchar* outData_s = mask2_s.ptr<uchar>(i);
+        uchar* outData_v = mask2_v.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_mask2 < 25)
+            {
+                *outData_h = 176;
+                *outData_s = 30;
+                *outData_v = 241;
+            }
+            else
+            {
+                *outData_h = 176;
+                *outData_s = 30+180*(*inData_mask2-25)/(255-25);
+                *outData_v = 241-200*(*inData_mask2-25)/(255-25);
+            }
+            
+            outData_h ++;
+            outData_s ++;
+            outData_v ++;
+            inData_mask2 ++;
+        }
+    }
+
+    std::vector<cv::Mat> mask_hsv_vector;
+    cv::Mat mask2_hsv, mask2_rgb;
+    mask_hsv_vector.push_back(mask2_h);
+    mask_hsv_vector.push_back(mask2_s);
+    mask_hsv_vector.push_back(mask2_v);
+    cv::merge(mask_hsv_vector, mask2_hsv);
+    cv::cvtColor(mask2_hsv, mask2_rgb, cv::COLOR_HSV2BGR);
+
+    // rgb通道增强
+    std::vector<cv::Mat> mask2_rgb_vector;
+    cv::split(mask2_rgb, mask2_rgb_vector);
+
+    cv::Mat mask2_r, mask2_g, mask2_b;
+    mask2_r.create(mask2.size(), CV_8UC1);
+    mask2_g.create(mask2.size(), CV_8UC1);
+    mask2_b.create(mask2.size(), CV_8UC1);
+
+    nr = mask2_rgb.rows;
+    nc = mask2_rgb.cols;
+    if(mask2_rgb.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2_rgb.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2_b = mask2_rgb_vector.at(0).ptr<uchar>(i);
+        const uchar* inData_mask2_g = mask2_rgb_vector.at(1).ptr<uchar>(i);
+        const uchar* inData_mask2_r = mask2_rgb_vector.at(2).ptr<uchar>(i);
+        uchar* outData_mask_r = mask2_r.ptr<uchar>(i);
+        uchar* outData_mask_g = mask2_g.ptr<uchar>(i);
+        uchar* outData_mask_b = mask2_b.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            float b_temp = -0.00003566*pow((*inData_mask2_b),3)+0.01467*pow((*inData_mask2_b),2)-0.4392*(*inData_mask2_b)-6.082;
+            float g_temp = -0.00003566*pow((*inData_mask2_g),3)+0.01467*pow((*inData_mask2_g),2)-0.4392*(*inData_mask2_g)-6.082;
+            float r_temp = -0.00003566*pow((*inData_mask2_r),3)+0.01467*pow((*inData_mask2_r),2)-0.4392*(*inData_mask2_r)-6.082;
+            if (b_temp < 0)
+            {
+                *outData_mask_b = 0;
+            }
+            else if (b_temp > 255)
+            {
+                *outData_mask_b = 255;
+            }
+            else
+            {
+                *outData_mask_b = (uchar)b_temp;
+            }
+
+            if (g_temp < 0)
+            {
+                *outData_mask_g = 0;
+            }
+            else if (g_temp > 255)
+            {
+                *outData_mask_g = 255;
+            }
+            else
+            {
+                *outData_mask_g = (uchar)g_temp;
+            }
+
+            if (r_temp < 0)
+            {
+                *outData_mask_r = 0;
+            }
+            else if (r_temp > 255)
+            {
+                *outData_mask_r = 255;
+            }
+            else
+            {
+                *outData_mask_r = (uchar)r_temp;
+            }
+
+
+            outData_mask_b ++;
+            outData_mask_g ++;
+            outData_mask_r ++;
+            inData_mask2_b ++;
+            inData_mask2_g ++;
+            inData_mask2_r ++;
+            
+        }
+    }
+   
+    // 再次clahe增强(慎重考虑)
+    // cv::Mat mask_2_b,mask_2_g,mask_2_r;
+    // cv::Ptr<CLAHE> clahe1 = createCLAHE();
+    // clahe1->setClipLimit(2);
+    // clahe1->apply(mask2_b, mask_2_b);
+    // clahe1->apply(mask2_g, mask_2_g);
+    // clahe1->apply(mask2_r, mask_2_r);
+    // cv::Mat mask3;
+    // std::vector<cv::Mat> mask3_rbg_vector;
+    // mask3_rbg_vector.push_back(mask_2_b);
+    // mask3_rbg_vector.push_back(mask_2_g);
+    // mask3_rbg_vector.push_back(mask_2_r);
+    // cv::merge(mask3_rbg_vector, mask3);
+
+    // 不再次clahe增强
+    cv::Mat mask3;
+    std::vector<cv::Mat> mask3_rbg_vector;
+    mask3_rbg_vector.push_back(mask2_b);
+    mask3_rbg_vector.push_back(mask2_g);
+    mask3_rbg_vector.push_back(mask2_r);
+    cv::merge(mask3_rbg_vector, mask3);
+
+    image_RedMap = mask3;
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "耗时:" << t << "ms" << std::endl;
+
+    // 保存图像
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);
+    cv::imwrite("red.png", image_RedMap, compression_params);  
+}
+
+int PreProcessImage::getBrownMap1()
+{
+    double t = (double)cv::getTickCount();
+
+    // 将图像转化为lab格式
+    cv::Mat Mat1 = image_cross;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+   
+    // 取Mat1_lab_b图像中的最大最小像素值
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = 0.50196;
+    max = 0.6549;
+
+    // 图像增强
+    int nr = Mat1_lab_b.rows;
+    int nc = Mat1_lab_b.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_b.size(), Mat1_lab_b.type());
+    if(Mat1_lab_b.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_b.rows*Mat1_lab_b.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_b.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+
+    // 融合三通道图片 HSV H=ZERO S=LAB_B V=HSV_V
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_b_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    outImage.convertTo(Mat1_b_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(Mat1_zero);
+    channels.push_back(Mat1_b_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+
+
+    // 提取rgb和lab通道，得到mask并增强
+    cv::Mat Mat2 = Mat1A_rgb;
+    cv::Mat Mat2_lab;
+    cv::cvtColor(Mat2, Mat2_lab, cv::COLOR_BGR2Lab);
+    std::vector<cv::Mat> Mat2_rgb_vector;
+    std::vector<cv::Mat> Mat2_lab_vector;
+    cv::split(Mat2, Mat2_rgb_vector);
+    cv::split(Mat2_lab, Mat2_lab_vector);
+
+    cv::Mat Mat2_zero;
+    Mat2_zero.create(Mat2.size(), CV_8UC1);
+
+    cv::Mat Mat2_lab_b = Mat2_lab_vector.at(2);
+    cv::Mat Mat2_rgb_g = Mat2_rgb_vector.at(1);
+    cv::Mat Mat2_rgb_b = Mat2_rgb_vector.at(0);
+
+    nr = Mat2_zero.rows;
+    nc = Mat2_zero.cols;
+    if(Mat2.isContinuous() && Mat2_zero.isContinuous())
+    {
+        nr = 1;
+        nc = nc * Mat2_zero.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_lab_b = Mat2_lab_b.ptr<uchar>(i);
+        const uchar* inData_b = Mat2_rgb_b.ptr<uchar>(i);
+        const uchar* inData_g = Mat2_rgb_g.ptr<uchar>(i);
+        uchar* outData = Mat2_zero.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            float temp = *inData_lab_b - *inData_g/20 - *inData_b/25 - 30;
+            // float temp = *inData_a - *inData_g/10 - *inData_b/15 -30;
+            int out_temp = (int)(-0.00009685*temp*temp*temp+0.03784*temp*temp-2.673*temp+48.12);
+            if (out_temp < 0)
+            {
+                *outData = 0;
+            }
+            else if (out_temp > 255)
+            {
+                *outData = 255;
+            }
+            else
+            {
+                *outData = (uchar)out_temp;
+            }
+            outData ++;
+            inData_lab_b ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+
+    // clahe去雾增强
+    cv::Mat mask2 = Mat2_zero;
+
+    // 对mask2图像进行RGB颜色合成并进行再次增强
+    float cs0=0.00,
+    cs1=15.00,
+    cs2=115.00,
+    cs3=190.00,
+    cs4=255.00,
+    a0=0.00,
+    a1=10.00/180.00,
+    a2=14.00/180.00,
+    a3=10.00/180.00,
+    a4=0.00,
+    b0=0,
+    b1=0.01,
+    b2=0.5,
+    b3=0.99,
+    b4=1,
+    c0=1.00,
+    c1=240.00/255.00,
+    c2=125.00/255.00,
+    c3=100.00/255.00,
+    c4=96.00/255.00;
+
+    // rgb颜色合成
+    cv::Mat mask2_h, mask2_s, mask2_v;
+    mask2_h.create(mask2.size(), CV_8UC1);
+    mask2_s.create(mask2.size(), CV_8UC1);
+    mask2_v.create(mask2.size(), CV_8UC1);
+
+    nr = mask2.rows;
+    nc = mask2.cols;
+    if(mask2.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2 = mask2.ptr<uchar>(i);
+        uchar* outData_h = mask2_h.ptr<uchar>(i);
+        uchar* outData_s = mask2_s.ptr<uchar>(i);
+        uchar* outData_v = mask2_v.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_mask2 < cs1)
+            {
+                *outData_h = (a0-(a1-a0)*cs0/(cs1-cs0)+(a1-a0)*(*inData_mask2)/(cs1-cs0))*180;
+                *outData_s = (b0-(b1-b0)*cs0/(cs1-cs0)+(b1-b0)*(*inData_mask2)/(cs1-cs0))*255;
+                *outData_v = (c0-(c1-c0)*cs0/(cs1-cs0)+(c1-c0)*(*inData_mask2)/(cs1-cs0))*255;
+            }
+            else if (*inData_mask2 >= cs1 && *inData_mask2 < cs2)
+            {
+                *outData_h = (a1-(a2-a1)*cs1/(cs2-cs1)+(a2-a1)*(*inData_mask2)/(cs2-cs1))*180;
+                *outData_s = (b1-(b2-b1)*cs1/(cs2-cs1)+(b2-b1)*(*inData_mask2)/(cs2-cs1))*255;
+                *outData_v = (c1-(c2-c1)*cs1/(cs2-cs1)+(c2-c1)*(*inData_mask2)/(cs2-cs1))*255;
+            }
+            else if (*inData_mask2 >= cs2 && *inData_mask2 < cs3)
+            {
+                *outData_h = (a2-(a3-a2)*cs2/(cs3-cs2)+(a3-a2)*(*inData_mask2)/(cs3-cs2))*180;
+                *outData_s = (b2-(b3-b2)*cs2/(cs3-cs2)+(b3-b2)*(*inData_mask2)/(cs3-cs2))*255;
+                *outData_v = (c2-(c3-c2)*cs2/(cs3-cs2)+(c3-c2)*(*inData_mask2)/(cs3-cs2))*255;
+            }
+            else if (*inData_mask2 >= cs3 && *inData_mask2 < cs4)
+            {
+                *outData_h = (a3-(a4-a3)*cs3/(cs4-cs3)+(a4-a3)*(*inData_mask2)/(cs4-cs3))*180;
+                *outData_s = (b3-(b4-b3)*cs3/(cs4-cs3)+(b4-b3)*(*inData_mask2)/(cs4-cs3))*255;
+                *outData_v = (c3-(c4-c3)*cs3/(cs4-cs3)+(c4-c3)*(*inData_mask2)/(cs4-cs3))*255;
+            }
+            
+            
+            outData_h ++;
+            outData_s ++;
+            outData_v ++;
+            inData_mask2 ++;
+        }
+    }
+
+    std::vector<cv::Mat> mask_hsv_vector;
+    cv::Mat mask2_hsv, mask2_rgb;
+    mask_hsv_vector.push_back(mask2_h);
+    mask_hsv_vector.push_back(mask2_s);
+    mask_hsv_vector.push_back(mask2_v);
+    cv::merge(mask_hsv_vector, mask2_hsv);
+    cv::cvtColor(mask2_hsv, mask2_rgb, cv::COLOR_HSV2BGR);
+
+    image_BrownMap = mask2_rgb;
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "data指针遍历:" << t << "ms" << std::endl;
+
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);  
+    cv::imwrite("brown.png", image_BrownMap, compression_params); 
+}
+
+int PreProcessImage::getBrownMap2()
+{
+    double t = (double)cv::getTickCount();
+
+    cv::Mat curves_dst;
+    curves_dst = image_cross;
+
+    // 曲线调色
+    // curves.RGBChannel.clearPoints();
+    // curves.RGBChannel.addPoint( Point(0, 0) );
+	// curves.RGBChannel.addPoint( Point(55,  27) );
+	// curves.RGBChannel.addPoint( Point(140, 146) );
+    // curves.RGBChannel.addPoint( Point(255, 255) );
+	// curves.adjust(image_cross, curves_dst);
+
+    // 将图像转化为lab格式
+    cv::Mat Mat1 = curves_dst;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+   
+    // 取Mat1_lab_b图像中的最大最小像素值
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    printf("max = %f min = %f\n", max, min);
+    // min = 0.50196;
+    // max = 0.6549;
+    min = 0.45784314;
+    max = 0.6049;
+
+
+    // 图像增强
+    int nr = Mat1_lab_b.rows;
+    int nc = Mat1_lab_b.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_b.size(), Mat1_lab_b.type());
+    if(Mat1_lab_b.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_b.rows*Mat1_lab_b.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_b.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+
+    // 融合三通道图片 HSV H=ZERO S=LAB_B V=HSV_V
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_b_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    cv::Mat kernel(outImage.size(), CV_8UC1, cv::Scalar(0));
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    outImage.convertTo(Mat1_b_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(Mat1_zero);
+    channels.push_back(Mat1_b_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+
+    // 将HSV转换成rgb，得到棕色增强图像
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+
+    // 提取rgb和lab通道，得到mask并增强
+    cv::Mat Mat2 = Mat1A_rgb;
+    cv::Mat Mat2_lab;
+    cv::cvtColor(Mat2, Mat2_lab, cv::COLOR_BGR2Lab);
+    std::vector<cv::Mat> Mat2_rgb_vector;
+    std::vector<cv::Mat> Mat2_lab_vector;
+    cv::split(Mat2, Mat2_rgb_vector);
+    cv::split(Mat2_lab, Mat2_lab_vector);
+
+    cv::Mat Mat2_zero;
+    Mat2_zero.create(Mat2.size(), CV_8UC1);
+
+    cv::Mat Mat2_lab_b = Mat2_lab_vector.at(2);
+    cv::Mat Mat2_rgb_g = Mat2_rgb_vector.at(1);
+    cv::Mat Mat2_rgb_b = Mat2_rgb_vector.at(0);
+
+    nr = Mat2_zero.rows;
+    nc = Mat2_zero.cols;
+    if(Mat2.isContinuous() && Mat2_zero.isContinuous())
+    {
+        nr = 1;
+        nc = nc * Mat2_zero.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_lab_b = Mat2_lab_b.ptr<uchar>(i);
+        const uchar* inData_b = Mat2_rgb_b.ptr<uchar>(i);
+        const uchar* inData_g = Mat2_rgb_g.ptr<uchar>(i);
+        uchar* outData = Mat2_zero.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // float temp = *inData_lab_b - *inData_g/20 - *inData_b/25 - 30;
+            float temp = *inData_lab_b - *inData_g/10 - *inData_b/15 - 30;
+            int out_temp = (int)(-0.00009685*temp*temp*temp + 0.03784*temp*temp - 2.673*temp + 48.12);
+            if (out_temp < 0)
+            {
+                *outData = 0;
+            }
+            else if (out_temp > 255)
+            {
+                *outData = 255;
+            }
+            else
+            {
+                *outData = (uchar)out_temp;
+            }
+            outData ++;
+            inData_lab_b ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+
+    // clahe去雾增强
+    cv::Mat mask2 = Mat2_zero;
+    cv::Ptr<CLAHE> clahe = createCLAHE();
+    clahe->setClipLimit(2);
+    clahe->apply(Mat2_zero, mask2);
+
+    // 转换成32位浮点数
+    cv::Mat mask2_f;
+    mask2.convertTo(mask2_f, CV_32F, 1/255.0);
+
+
+    // 对mask2图像进行RGB颜色合成并进行三次特征增强
+    float 
+    cs0=0.00,
+    cs1=15.00,
+    cs2=115.00,
+    cs3=190.00,
+    cs4=255.00,
+    a0=0.00,
+    a1=10.00/180.00,
+    a2=14.00/180.00,
+    a3=10.00/180.00,
+    a4=0.00,
+    b0=0,
+    b1=0.01,
+    b2=0.5,
+    b3=0.99,
+    b4=1,
+    c0=1.00,
+    c1=240.00/255.00,
+    c2=125.00/255.00,
+    c3=100.00/255.00,
+    c4=96.00/255.00;
+
+    // rgb颜色合成
+    cv::Mat mask2_h, mask2_s, mask2_v;
+    mask2_h.create(mask2.size(), CV_8UC1);
+    mask2_s.create(mask2.size(), CV_8UC1);
+    mask2_v.create(mask2.size(), CV_8UC1);
+
+    nr = mask2.rows;
+    nc = mask2.cols;
+    if(mask2.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2 = mask2.ptr<uchar>(i);
+        uchar* outData_h = mask2_h.ptr<uchar>(i);
+        uchar* outData_s = mask2_s.ptr<uchar>(i);
+        uchar* outData_v = mask2_v.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_mask2 < cs1)
+            {
+                *outData_h = (a0-(a1-a0)*cs0/(cs1-cs0)+(a1-a0)*(*inData_mask2)/(cs1-cs0))*180;
+                *outData_s = (b0-(b1-b0)*cs0/(cs1-cs0)+(b1-b0)*(*inData_mask2)/(cs1-cs0))*255;
+                *outData_v = (c0-(c1-c0)*cs0/(cs1-cs0)+(c1-c0)*(*inData_mask2)/(cs1-cs0))*255;
+            }
+            else if (*inData_mask2 >= cs1 && *inData_mask2 < cs2)
+            {
+                *outData_h = (a1-(a2-a1)*cs1/(cs2-cs1)+(a2-a1)*(*inData_mask2)/(cs2-cs1))*180;
+                *outData_s = (b1-(b2-b1)*cs1/(cs2-cs1)+(b2-b1)*(*inData_mask2)/(cs2-cs1))*255;
+                *outData_v = (c1-(c2-c1)*cs1/(cs2-cs1)+(c2-c1)*(*inData_mask2)/(cs2-cs1))*255;
+            }
+            else if (*inData_mask2 >= cs2 && *inData_mask2 < cs3)
+            {
+                *outData_h = (a2-(a3-a2)*cs2/(cs3-cs2)+(a3-a2)*(*inData_mask2)/(cs3-cs2))*180;
+                *outData_s = (b2-(b3-b2)*cs2/(cs3-cs2)+(b3-b2)*(*inData_mask2)/(cs3-cs2))*255;
+                *outData_v = (c2-(c3-c2)*cs2/(cs3-cs2)+(c3-c2)*(*inData_mask2)/(cs3-cs2))*255;
+                // *outData_v = (c1-(c2-c1)*cs1/(cs2-cs1)+(c2-c1)*(*inData_mask2)/(cs2-cs1))*255;
+            }
+            else if (*inData_mask2 >= cs3 && *inData_mask2 < cs4)
+            {
+                *outData_h = (a3-(a4-a3)*cs3/(cs4-cs3)+(a4-a3)*(*inData_mask2)/(cs4-cs3))*180;
+                *outData_s = (b3-(b4-b3)*cs3/(cs4-cs3)+(b4-b3)*(*inData_mask2)/(cs4-cs3))*255;
+                *outData_v = (c3-(c4-c3)*cs3/(cs4-cs3)+(c4-c3)*(*inData_mask2)/(cs4-cs3))*255;
+            }
+            // printf("%d ",*outData_s);
+            // *outData_s = *outData_s - 10;
+            outData_h ++;
+            outData_s ++;
+            outData_v ++;
+            inData_mask2 ++;
+        }
+    }
+
+    std::vector<cv::Mat> mask_hsv_vector;
+    cv::Mat mask2_hsv, mask2_rgb;
+    mask_hsv_vector.push_back(mask2_h);
+    mask_hsv_vector.push_back(mask2_s);
+    mask_hsv_vector.push_back(mask2_v);
+    cv::merge(mask_hsv_vector, mask2_hsv);
+    cv::cvtColor(mask2_hsv, mask2_rgb, cv::COLOR_HSV2BGR);
+
+    // 再次clahe增强
+    std::vector<cv::Mat> mask2_bgr_vector, mask2_bgr_vector1;
+    cv::split(mask2_rgb, mask2_bgr_vector);
+    cv::Mat mask_2_b,mask_2_g,mask_2_r;
+    cv::Ptr<CLAHE> clahe1 = createCLAHE();
+    clahe1->setClipLimit(2);
+    clahe1->apply(mask2_bgr_vector.at(0), mask_2_b);
+    clahe1->apply(mask2_bgr_vector.at(1), mask_2_g);
+    clahe1->apply(mask2_bgr_vector.at(2), mask_2_r);
+    mask2_bgr_vector1.push_back(mask_2_b);
+    mask2_bgr_vector1.push_back(mask_2_g);
+    mask2_bgr_vector1.push_back(mask_2_r);
+    cv::Mat mask3;
+    cv::merge(mask2_bgr_vector1, mask3);
+
+    // 使用曲线优化
+    cv::Mat mask2_rgb_adj =  mask3;
+    // curves.RedChannel.clearPoints();
+    // curves.GreenChannel.clearPoints();
+    // curves.RedChannel.addPoint( Point(0, 0) );
+	// curves.RedChannel.addPoint( Point(25,  107) );
+    // curves.RedChannel.addPoint( Point(255, 255) );
+    // curves.GreenChannel.addPoint( Point(0, 0) );
+	// curves.GreenChannel.addPoint( Point(60,  86) );
+    // curves.GreenChannel.addPoint( Point(255, 255) );
+	// curves.adjust(mask3, mask2_rgb_adj);
+
+    image_BrownMap = mask2_rgb_adj;
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "data指针遍历:" << t << "ms" << std::endl;
+
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);  
+    cv::imwrite("brown.png", image_BrownMap, compression_params); 
+}
+
+int PreProcessImage::getBrownMap()
+{
+    double t = (double)cv::getTickCount();
+
+    cv::Mat curves_dst;
+    curves_dst = image_cross;
+
+    // 曲线调色
+    curves.RGBChannel.clearPoints();
+    // curves.RedChannel.clearPoints();
+    // curves.GreenChannel.clearPoints();
+    // curves.BlueChannel.clearPoints();
+    curves.RGBChannel.addPoint( Point(0, 0) );
+	curves.RGBChannel.addPoint( Point(45,  27) );
+	curves.RGBChannel.addPoint( Point(140, 146) );
+    curves.RGBChannel.addPoint( Point(255, 255) );
+	curves.adjust(image_cross, curves_dst);
+
+    // 将图像转化为lab格式
+    cv::Mat Mat1 = curves_dst;
+    cv::Mat Mat1_lab, Mat1_hsv;
+    cv::Mat Mat1_lab_f, Mat1_hsv_f;
+    std::vector<cv::Mat> Mat1_lab_vector;
+    std::vector<cv::Mat> Mat1_hsv_vector;
+
+    cv::cvtColor(Mat1, Mat1_lab, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Mat1, Mat1_hsv, cv::COLOR_BGR2HSV);
+    Mat1_lab.convertTo(Mat1_lab_f, CV_32F, 1/255.0);
+    Mat1_hsv.convertTo(Mat1_hsv_f, CV_32F, 1/255.0);
+    cv::split(Mat1_lab_f, Mat1_lab_vector);
+    cv::split(Mat1_hsv_f, Mat1_hsv_vector);
+
+    cv::Mat Mat1_lab_b = Mat1_lab_vector.at(2);
+    cv::Mat Mat1_hsv_v = Mat1_hsv_vector.at(2);
+   
+    // 取Mat1_lab_b图像中的最大最小像素值
+    float min,max;
+    max = *std::max_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    min = *std::min_element(Mat1_lab_b.begin<float>(), Mat1_lab_b.end<float>());
+    printf("max = %f min = %f\n", max, min);
+    // min = 0.50196;
+    // max = 0.6549;
+    // min = 0.45784314;
+    // max = 0.6049;
+
+
+    // 图像增强
+    int nr = Mat1_lab_b.rows;
+    int nc = Mat1_lab_b.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_lab_b.size(), Mat1_lab_b.type());
+    if(Mat1_lab_b.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_lab_b.rows*Mat1_lab_b.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const float* inData = Mat1_lab_b.ptr<float>(i);
+        float* outData = outImage.ptr<float>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData < min)
+            {
+                *outData = 0;
+            }
+            else if (*inData > max)
+            {
+                *outData = 1;
+            }
+            else
+            {
+                *outData = (*inData - min)/(max-min);
+            }
+            outData ++;
+            inData ++;
+        }
+    }
+
+    // 融合三通道图片 HSV H=ZERO S=LAB_B V=HSV_V
+    cv::Mat Mat1_zero;
+    cv::Mat Mat1_b_temp;
+    cv::Mat Mat1_v_temp;
+    cv::Mat Mat1A;
+    cv::Mat Mat1A_rgb;
+    std::vector<cv::Mat> channels;
+    cv::Mat kernel(outImage.size(), CV_8UC1, cv::Scalar(0));
+    Mat1_zero.create(outImage.size(), CV_8UC1);
+    outImage.convertTo(Mat1_b_temp, CV_8U, 255); 
+    Mat1_hsv_v.convertTo(Mat1_v_temp, CV_8U, 255);
+    channels.push_back(Mat1_zero);
+    channels.push_back(Mat1_b_temp);
+    channels.push_back(Mat1_v_temp);
+    cv::merge(channels, Mat1A);
+
+    // 将HSV转换成rgb，得到棕色增强图像
+    cv::cvtColor(Mat1A, Mat1A_rgb, cv::COLOR_HSV2BGR);
+
+    // 提取rgb和lab通道，得到mask并增强
+    cv::Mat Mat2 = Mat1A_rgb;
+    cv::Mat Mat2_lab;
+    cv::cvtColor(Mat2, Mat2_lab, cv::COLOR_BGR2Lab);
+    std::vector<cv::Mat> Mat2_rgb_vector;
+    std::vector<cv::Mat> Mat2_lab_vector;
+    cv::split(Mat2, Mat2_rgb_vector);
+    cv::split(Mat2_lab, Mat2_lab_vector);
+
+    cv::Mat Mat2_zero;
+    Mat2_zero.create(Mat2.size(), CV_8UC1);
+
+    cv::Mat Mat2_lab_b = Mat2_lab_vector.at(2);
+    cv::Mat Mat2_rgb_g = Mat2_rgb_vector.at(1);
+    cv::Mat Mat2_rgb_b = Mat2_rgb_vector.at(0);
+
+    nr = Mat2_zero.rows;
+    nc = Mat2_zero.cols;
+    if(Mat2.isContinuous() && Mat2_zero.isContinuous())
+    {
+        nr = 1;
+        nc = nc * Mat2_zero.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_lab_b = Mat2_lab_b.ptr<uchar>(i);
+        const uchar* inData_b = Mat2_rgb_b.ptr<uchar>(i);
+        const uchar* inData_g = Mat2_rgb_g.ptr<uchar>(i);
+        uchar* outData = Mat2_zero.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            // float temp = *inData_lab_b - *inData_g/20 - *inData_b/25 - 30;
+            float temp = *inData_lab_b - *inData_g/10 - *inData_b/15 - 30;
+            int out_temp = (int)(-0.00009685*temp*temp*temp + 0.03784*temp*temp - 2.673*temp + 48.12);
+            if (out_temp < 0)
+            {
+                *outData = 0;
+            }
+            else if (out_temp > 255)
+            {
+                *outData = 255;
+            }
+            else
+            {
+                *outData = (uchar)out_temp;
+            }
+            outData ++;
+            inData_lab_b ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+
+    // clahe去雾增强
+    // cv::Mat mask2 = Mat2_zero;
+    cv::Ptr<CLAHE> clahe = createCLAHE();
+    clahe->setClipLimit(2);
+    cv::Mat mask2;
+    clahe->apply(Mat2_zero, mask2);
+
+    // 转换成32位浮点数
+    cv::Mat mask2_f;
+    mask2.convertTo(mask2_f, CV_32F, 1/255.0);
+
+
+    // 对mask2图像进行RGB颜色合成并进行三次特征增强
+    float cs0=0.00,
+    cs1=15.00,
+    cs2=115.00,
+    cs3=190.00,
+    cs4=255.00,
+    a0=0.00,
+    a1=10.00/180.00,
+    a2=14.00/180.00,
+    a3=10.00/180.00,
+    a4=0.00,
+    b0=0,
+    b1=0.01,
+    b2=0.5,
+    b3=0.99,
+    b4=1,
+    c0=1.00,
+    c1=240.00/255.00,
+    c2=125.00/255.00,
+    c3=100.00/255.00,
+    c4=96.00/255.00;
+
+    // rgb颜色合成
+    cv::Mat mask2_h, mask2_s, mask2_v;
+    mask2_h.create(mask2.size(), CV_8UC1);
+    mask2_s.create(mask2.size(), CV_8UC1);
+    mask2_v.create(mask2.size(), CV_8UC1);
+
+    nr = mask2.rows;
+    nc = mask2.cols;
+    if(mask2.isContinuous())
+    {
+        nr = 1;
+        nc = nc * mask2.rows;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_mask2 = mask2.ptr<uchar>(i);
+        uchar* outData_h = mask2_h.ptr<uchar>(i);
+        uchar* outData_s = mask2_s.ptr<uchar>(i);
+        uchar* outData_v = mask2_v.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        {
+            if (*inData_mask2 < cs1)
+            {
+                *outData_h = (a0-(a1-a0)*cs0/(cs1-cs0)+(a1-a0)*(*inData_mask2)/(cs1-cs0))*180;
+                *outData_s = (b0-(b1-b0)*cs0/(cs1-cs0)+(b1-b0)*(*inData_mask2)/(cs1-cs0))*255;
+                *outData_v = (c0-(c1-c0)*cs0/(cs1-cs0)+(c1-c0)*(*inData_mask2)/(cs1-cs0))*255;
+            }
+            else if (*inData_mask2 >= cs1 && *inData_mask2 < cs2)
+            {
+                *outData_h = (a1-(a2-a1)*cs1/(cs2-cs1)+(a2-a1)*(*inData_mask2)/(cs2-cs1))*180;
+                *outData_s = (b1-(b2-b1)*cs1/(cs2-cs1)+(b2-b1)*(*inData_mask2)/(cs2-cs1))*255;
+                *outData_v = (c1-(c2-c1)*cs1/(cs2-cs1)+(c2-c1)*(*inData_mask2)/(cs2-cs1))*255;
+            }
+            else if (*inData_mask2 >= cs2 && *inData_mask2 < cs3)
+            {
+                *outData_h = (a2-(a3-a2)*cs2/(cs3-cs2)+(a3-a2)*(*inData_mask2)/(cs3-cs2))*180;
+                *outData_s = (b2-(b3-b2)*cs2/(cs3-cs2)+(b3-b2)*(*inData_mask2)/(cs3-cs2))*255;
+                *outData_v = (c2-(c3-c2)*cs2/(cs3-cs2)+(c3-c2)*(*inData_mask2)/(cs3-cs2))*255;
+                // *outData_v = (c1-(c2-c1)*cs1/(cs2-cs1)+(c2-c1)*(*inData_mask2)/(cs2-cs1))*255;
+            }
+            else if (*inData_mask2 >= cs3 && *inData_mask2 < cs4)
+            {
+                *outData_h = (a3-(a4-a3)*cs3/(cs4-cs3)+(a4-a3)*(*inData_mask2)/(cs4-cs3))*180;
+                *outData_s = (b3-(b4-b3)*cs3/(cs4-cs3)+(b4-b3)*(*inData_mask2)/(cs4-cs3))*255;
+                *outData_v = (c3-(c4-c3)*cs3/(cs4-cs3)+(c4-c3)*(*inData_mask2)/(cs4-cs3))*255;
+            }
+            
+            
+            outData_h ++;
+            outData_s ++;
+            outData_v ++;
+            inData_mask2 ++;
+        }
+    }
+
+    std::vector<cv::Mat> mask_hsv_vector;
+    cv::Mat mask2_hsv, mask2_rgb;
+    mask_hsv_vector.push_back(mask2_h);
+    mask_hsv_vector.push_back(mask2_s);
+    mask_hsv_vector.push_back(mask2_v);
+    cv::merge(mask_hsv_vector, mask2_hsv);
+    cv::cvtColor(mask2_hsv, mask2_rgb, cv::COLOR_HSV2BGR);
+
+    
+
+    // 再次clahe增强
+    std::vector<cv::Mat> mask2_bgr_vector, mask2_bgr_vector1;
+    cv::split(mask2_rgb, mask2_bgr_vector);
+    cv::Mat mask_2_b,mask_2_g,mask_2_r;
+    cv::Ptr<CLAHE> clahe1 = createCLAHE();
+    clahe1->setClipLimit(2);
+    clahe1->apply(mask2_bgr_vector.at(0), mask_2_b);
+    clahe1->apply(mask2_bgr_vector.at(1), mask_2_g);
+    clahe1->apply(mask2_bgr_vector.at(2), mask_2_r);
+    mask2_bgr_vector1.push_back(mask_2_b);
+    mask2_bgr_vector1.push_back(mask_2_g);
+    mask2_bgr_vector1.push_back(mask_2_r);
+    cv::Mat mask3;
+    cv::merge(mask2_bgr_vector1, mask3);
+
+    // 使用曲线优化
+    cv::Mat mask2_rgb_adj ;
+    // curves.RGBChannel.clearPoints();
+    curves.RedChannel.clearPoints();
+    curves.GreenChannel.clearPoints();
+    // curves.BlueChannel.clearPoints();
+    // curves.RGBChannel.addPoint( Point(0, 0) );
+    // curves.RGBChannel.addPoint( Point(255, 255) );
+    curves.RedChannel.addPoint( Point(0, 0) );
+	curves.RedChannel.addPoint( Point(25,  107) );
+	// curves.RedChannel.addPoint( Point(139, 198) );
+    curves.RedChannel.addPoint( Point(255, 255) );
+    curves.GreenChannel.addPoint( Point(0, 0) );
+	curves.GreenChannel.addPoint( Point(60,  86) );
+    curves.GreenChannel.addPoint( Point(255, 255) );
+
+	curves.adjust(mask3, mask2_rgb_adj);
+
+    image_BrownMap = mask2_rgb_adj;
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "data指针遍历:" << t << "ms" << std::endl;
+
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0);  
+    cv::imwrite("brown.png", image_BrownMap, compression_params); 
+}
+
+void gammaTransformation(cv::Mat& matInput, cv::Mat& matOutput, float fGamma, float fC /*= 1.0f*/)
+{
+	assert(matInput.elemSize() == 1);
+	//构造输出图像
+	matOutput = cv::Mat::zeros(matInput.rows, matInput.cols, matInput.type());
+ 
+	//循环中尽量避免除法
+	float fNormalFactor = 1.0f / 255.0f;
+	//构造查询表
+	std::vector<unsigned char> lookUp(256);
+	for (size_t m = 0; m < lookUp.size(); m++)
+	{
+		//gamma变换
+		float fOutput = std::pow(m * fNormalFactor, 1/fGamma) * fC;
+		//数值溢出判断
+		fOutput = fOutput > 1.0f ? 1.0f : fOutput;
+		//输出
+		lookUp[m] = static_cast<unsigned char>(fOutput * 255.0f);
+	}
+ 
+	for (size_t r = 0; r < matInput.rows; r++)
+	{
+		unsigned char* pInput = matInput.data + r * matInput.step[0];
+		unsigned char* pOutput = matOutput.data + r * matOutput.step[0];
+		for (size_t c = 0; c < matInput.cols; c++)
+		{
+			//查表gamma变换
+			pOutput[c] = lookUp[pInput[c]];
+		}
+	}
+}
+
+void gammaCorrection(const Mat &img, cv::Mat& matOutput, const double gamma_)
+{
+    CV_Assert(gamma_ >= 0);
+    //! [changing-contrast-brightness-gamma-correction]
+    Mat lookUpTable(1, 256, CV_8U);
+    uchar* p = lookUpTable.ptr();
+    for( int i = 0; i < 256; ++i)
+        p[i] = saturate_cast<uchar>(pow(i / 255.0, 1/gamma_) * 255.0);
+
+    Mat res = img.clone();
+    LUT(img, lookUpTable, res);
+    //! [changing-contrast-brightness-gamma-correction]
+    matOutput = res;
+}
+
+int PreProcessImage::getUVHigh()
+{
+    double t = (double)cv::getTickCount();
+
+    // 灰度化
+    cv::Mat Mat1 ;
+    cv::Mat Mat_gray;
+    Mat1 = image_uv.clone();
+    cv::cvtColor(Mat1, Mat_gray, cv::COLOR_BGR2GRAY);
+
+    // 提取RGB图像的通道，并将GB通道赋值给灰度图
+    std::vector<cv::Mat> Mat1_bgr_vector;
+    cv::split(Mat1, Mat1_bgr_vector);
+
+    cv::Mat Mat1_bgr_b = Mat1_bgr_vector.at(0);
+    cv::Mat Mat1_bgr_g = Mat1_bgr_vector.at(1);
+
+    int nr = Mat1_bgr_b.rows;
+    int nc = Mat1_bgr_b.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_bgr_b.size(), Mat1_bgr_b.type());
+    if(Mat1_bgr_b.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_bgr_b.rows*Mat1_bgr_b.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const char* inData_b = Mat1_bgr_b.ptr<char>(i);
+        const char* inData_g = Mat1_bgr_g.ptr<char>(i);
+        char* outData = outImage.ptr<char>(i);
+        for(int j=0; j<nc; j++)
+        { 
+            uchar b = *inData_b;
+            uchar g = *inData_g;
+            *outData = (uchar)((b+g)/2) ;
+            outData ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+    
+    // gamma变换
+    cv::Mat Mat_ga;
+    // gammaTransformation(outImage, Mat_ga, 0.6, 1.0);
+    gammaCorrection(outImage, Mat_ga, 1.2);
+    
+    // 卷积
+    cv::Mat kernel(100, 100, CV_32F, cv::Scalar(0.0001));
+    // cv::Mat kernel(300, 300, CV_32F, cv::Scalar(0.00001111));
+    cv::Mat Mat_co;
+    filter2D(outImage, Mat_co, -1, kernel, cv::Point(-1,-1));
+
+    // 深层色斑
+    float n = 0.8;
+    nr = Mat_ga.rows;
+    nc = Mat_ga.cols;
+
+    cv::Mat outImage_ga;
+    outImage_ga.create(Mat_ga.size(), Mat_ga.type());
+    if(Mat_ga.isContinuous() && outImage_ga.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat_ga.rows*Mat_ga.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_ga = Mat_ga.ptr<uchar>(i);
+        const uchar* inData_co = Mat_co.ptr<uchar>(i);
+        uchar* outData = outImage_ga.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        { 
+            int temp_out;
+            int temp_ga = (int)*inData_ga;
+            int temp_co = (int)*inData_co;
+            if (temp_ga <= temp_co)
+            {
+                temp_out = temp_co-(n+1)*(temp_co-temp_ga);
+            }
+            else
+            {
+                temp_out = temp_co+(n+1)*(temp_co-temp_ga);
+            }
+            if(temp_out < 0)
+                temp_out = 0;
+            else if (temp_out > 255)
+                temp_out = 255;
+            
+     
+            *outData = 0 - 0.000004401*temp_out*temp_out*temp_out + 0.0034311*temp_out*temp_out + 0.3439*temp_out;
+            
+            outData ++;
+            inData_ga ++;
+            inData_co ++;
+        }
+    }
+
+    cv::Mat Mat2;
+    cv::cvtColor(outImage_ga, Mat2, cv::COLOR_GRAY2BGR);
+
+    // 使用曲线增强
+    cv::Mat curves_dst;
+    curves_dst = Mat2;
+
+    // 曲线调色
+    curves.RGBChannel.clearPoints();
+    curves.RGBChannel.addPoint( Point(0, 0) );
+	curves.RGBChannel.addPoint( Point(44,  73) );
+	curves.RGBChannel.addPoint( Point(187, 212) );
+    curves.RGBChannel.addPoint( Point(255, 255) );
+	curves.adjust(Mat2, curves_dst);
+
+    image_UVHigh = curves_dst;
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "data指针遍历:" << t << "ms" << std::endl;
+
+    // cv::Mat mat_save;
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0); 
+    cv::imwrite("uv.png", image_UVHigh, compression_params);  
+}
+
+int PreProcessImage::getUVHigh1()
+{
+    double t = (double)cv::getTickCount();
+
+    // 灰度化
+    cv::Mat Mat1 ;
+    cv::Mat Mat_gray;
+    Mat1 = image_uv.clone();
+    cv::cvtColor(Mat1, Mat_gray, cv::COLOR_BGR2GRAY);
+
+    // 提取RGB图像的通道，并将GB通道赋值给灰度图
+    std::vector<cv::Mat> Mat1_bgr_vector;
+    cv::split(Mat1, Mat1_bgr_vector);
+
+    cv::Mat Mat1_bgr_b = Mat1_bgr_vector.at(0);
+    cv::Mat Mat1_bgr_g = Mat1_bgr_vector.at(1);
+
+    int nr = Mat1_bgr_b.rows;
+    int nc = Mat1_bgr_b.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_bgr_b.size(), Mat1_bgr_b.type());
+    if(Mat1_bgr_b.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_bgr_b.rows*Mat1_bgr_b.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const char* inData_b = Mat1_bgr_b.ptr<char>(i);
+        const char* inData_g = Mat1_bgr_g.ptr<char>(i);
+        char* outData = outImage.ptr<char>(i);
+        for(int j=0; j<nc; j++)
+        { 
+            uchar b = *inData_b;
+            uchar g = *inData_g;
+            *outData = (uchar)((b+g)/2) ;
+            outData ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+    
+    // gamma变换
+    cv::Mat Mat_ga;
+    // gammaTransformation(outImage, Mat_ga, 0.6, 1.0);
+    gammaCorrection(outImage, Mat_ga, 1.2);
+    
+    // 卷积
+    cv::Mat kernel(300, 300, CV_32F, cv::Scalar(0.00001111));
+    cv::Mat Mat_co;
+    filter2D(outImage, Mat_co, -1, kernel, cv::Point(-1,-1));
+
+    // 深层色斑
+    float n = 0.8;
+    nr = Mat_ga.rows;
+    nc = Mat_ga.cols;
+
+    cv::Mat outImage_ga;
+    outImage_ga.create(Mat_ga.size(), Mat_ga.type());
+    if(Mat_ga.isContinuous() && outImage_ga.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat_ga.rows*Mat_ga.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_ga = Mat_ga.ptr<uchar>(i);
+        const uchar* inData_co = Mat_co.ptr<uchar>(i);
+        uchar* outData = outImage_ga.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        { 
+            int temp_out;
+            int temp_ga = (int)*inData_ga;
+            int temp_co = (int)*inData_co;
+            if (temp_ga <= temp_co)
+            {
+                temp_out = temp_co-(n+1)*(temp_co-temp_ga);
+            }
+            else
+            {
+                temp_out = temp_co+(n+1)*(temp_co-temp_ga);
+            }
+            if(temp_out < 0)
+                temp_out = 0;
+            else if (temp_out > 255)
+                temp_out = 255;
+            
+     
+            *outData = 0 - 0.000004401*temp_out*temp_out*temp_out + 0.0034311*temp_out*temp_out + 0.3439*temp_out;
+            
+            outData ++;
+            inData_ga ++;
+            inData_co ++;
+        }
+    }
+
+    cv::Mat Mat2;
+    cv::cvtColor(outImage_ga, Mat2, cv::COLOR_GRAY2BGR);
+
+    image_UVHigh = Mat2;
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "data指针遍历:" << t << "ms" << std::endl;
+
+    // cv::Mat mat_save;
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0); 
+    cv::imwrite("uv.png", image_UVHigh, compression_params);  
+}
+
+int PreProcessImage::getUVHigh2()
+{
+    double t = (double)cv::getTickCount();
+
+    // 灰度化
+    cv::Mat Mat1 ;
+    cv::Mat Mat_gray;
+    Mat1 = image_uv.clone();
+    cv::cvtColor(Mat1, Mat_gray, cv::COLOR_BGR2GRAY);
+
+    // 提取RGB图像的通道，并将GB通道赋值给灰度图
+    std::vector<cv::Mat> Mat1_bgr_vector;
+    cv::split(Mat1, Mat1_bgr_vector);
+
+    cv::Mat Mat1_bgr_b = Mat1_bgr_vector.at(0);
+    cv::Mat Mat1_bgr_g = Mat1_bgr_vector.at(1);
+
+    int nr = Mat1_bgr_b.rows;
+    int nc = Mat1_bgr_b.cols;
+    cv::Mat outImage;
+    outImage.create(Mat1_bgr_b.size(), Mat1_bgr_b.type());
+    if(Mat1_bgr_b.isContinuous() && outImage.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat1_bgr_b.rows*Mat1_bgr_b.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const char* inData_b = Mat1_bgr_b.ptr<char>(i);
+        const char* inData_g = Mat1_bgr_g.ptr<char>(i);
+        char* outData = outImage.ptr<char>(i);
+        for(int j=0; j<nc; j++)
+        { 
+            uchar b = *inData_b;
+            uchar g = *inData_g;
+            *outData = (uchar)((b+g)/2) ;
+            outData ++;
+            inData_b ++;
+            inData_g ++;
+        }
+    }
+
+    std::vector<int> compression_params1;
+	compression_params1.push_back(16);
+	compression_params1.push_back(0); 
+    cv::imwrite("gray.png", outImage, compression_params1);  
+    
+    // gamma变换
+    cv::Mat Mat_ga;
+    gammaTransformation(outImage, Mat_ga, 1.6, 1.0);
+    std::vector<int> compression_params2;
+	compression_params2.push_back(16);
+	compression_params2.push_back(0); 
+    cv::imwrite("Mat_ga.png", Mat_ga, compression_params2); 
+
+    
+    // 卷积
+    cv::Mat kernel(300, 300, CV_32F, cv::Scalar(0.000011111)); 
+    cv::Mat Mat_co;
+    filter2D(outImage, Mat_co, -1, kernel, cv::Point(-1,-1));
+
+    std::vector<int> compression_params3;
+	compression_params3.push_back(16);
+	compression_params3.push_back(0); 
+    cv::imwrite("Mat_co.png", Mat_co, compression_params3); 
+
+    // 深层色斑
+    float n = 0.8;
+    nr = Mat_ga.rows;
+    nc = Mat_ga.cols;
+
+    cv::Mat outImage_ga;
+    outImage_ga.create(Mat_ga.size(), Mat_ga.type());
+    if(Mat_ga.isContinuous() && outImage_ga.isContinuous())
+    {
+        nr = 1;
+        nc = nc*Mat_ga.rows*Mat_ga.channels();
+        std::cout << "test"<< std::endl;
+    }
+    for(int i=0;i<nr;i++)
+    {
+        const uchar* inData_ga = Mat_ga.ptr<uchar>(i);
+        const uchar* inData_co = Mat_co.ptr<uchar>(i);
+        uchar* outData = outImage_ga.ptr<uchar>(i);
+        for(int j=0; j<nc; j++)
+        { 
+            int temp_out;
+            int temp_ga = (int)*inData_ga;
+            int temp_co = (int)*inData_co;
+            if (temp_ga <= temp_co)
+            {
+                temp_out = temp_co-(n+1)*(temp_co-temp_ga);
+            }
+            else
+            {
+                temp_out = temp_co+(n+1)*(temp_co-temp_ga);
+            }
+            if(temp_out < 0)
+                temp_out = 0;
+            else if (temp_out > 255)
+                temp_out = 255;
+            
+     
+            // *outData = 0 - 0.000004401*temp_out*temp_out*temp_out + 0.0034311*temp_out*temp_out + 0.3439*temp_out;
+            // *outData = 0 - 0.000004401*temp_out*temp_out*temp_out + 0.0034311*temp_out*temp_out + 0.3439*temp_out;
+            // *outData = 1.3439*temp_out + 0.0034311*temp_out*temp_out - 0.000004401*temp_out*temp_out*temp_out;
+            *outData = 2*temp_out;
+            
+            
+            outData ++;
+            inData_ga ++;
+            inData_co ++;
+        }
+    }
+
+    cv::Mat Mat2;
+    cv::cvtColor(outImage_ga, Mat2, cv::COLOR_GRAY2BGR);
+
+    // 使用曲线增强
+    cv::Mat curves_dst;
+    curves_dst = Mat2;
+
+    // 曲线调色
+    curves.RGBChannel.clearPoints();
+    curves.RGBChannel.addPoint( Point(0, 0) );
+	curves.RGBChannel.addPoint( Point(44,  73) );
+	curves.RGBChannel.addPoint( Point(187, 212) );
+    curves.RGBChannel.addPoint( Point(255, 255) );
+	curves.adjust(Mat2, curves_dst);
+
+    image_UVHigh = curves_dst;
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency()*1000; //获得时间，单位是毫秒
+    std::cout << "data指针遍历:" << t << "ms" << std::endl;
+
+    std::vector<int> compression_params;
+	compression_params.push_back(16);
+	compression_params.push_back(0); 
+    cv::imwrite("uv.png", image_UVHigh, compression_params);  
+}
+
+

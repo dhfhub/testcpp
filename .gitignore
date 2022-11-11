@@ -1,0 +1,4 @@
+build/*
+!build/*.py
+!build/demo.jpg
+res
